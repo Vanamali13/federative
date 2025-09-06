@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Federated Learning Client</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.4.0/dist/tf.min.js"></script>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; background-color: #f0f2f5; color: #333; }
+        h1 { color: #1a73e8; }
+        #log { margin-top: 20px; padding: 10px; border: 1px solid #ccc; max-height: 200px; overflow-y: auto; background-color: #fff; border-radius: 8px; font-family: 'Courier New', Courier, monospace; }
+        .success { color: #34a853; }
+        .error { color: #ea4335; }
+        input[type="file"] { border: 1px solid #ccc; padding: 5px; border-radius: 4px; }
+        button { background-color: #1a73e8; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; transition: background-color 0.3s; }
+        button:hover { background-color: #1558b3; }
+    </style>
+</head>
+<body>
+    <h1>Federated Learning Client App</h1>
+    <p>This application will train a model on your local data without sending the data to the server.</p>
+
+    <input type="file" id="csvFile" accept=".csv" />
+    <button onclick="startTraining()">Start Training</button>
+
+    <h3>Training Log</h3>
+    <div id="log"></div>
+
+    <script>
+        const log = (message, type = 'info') => {
+            const logDiv = document.getElementById('log');
+            const p = document.createElement('p');
+            p.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            p.className = type;
+            logDiv.appendChild(p);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        };
+
+        const loadCSV = async (file) => {
+            log('Loading CSV file...');
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const data = event.target.result;
+                    const lines = data.split('\n').slice(1); // Skip header
+                    const records = lines.filter(line => line.trim() !== '').map(line => line.split(',').map(Number));
+                    if (records.length === 0) {
+                        return reject('CSV file is empty or has no data.');
+                    }
+                    const features = records.map(row => row.slice(0, -1));
+                    const labels = records.map(row => row[row.length - 1]);
+                    resolve({ features, labels });
+                };
+                reader.onerror = (error) => reject(error);
+                reader.readAsText(file);
+            });
+        };
+
+        const startTraining = async () => {
+            const fileInput = document.getElementById('csvFile');
+            const file = fileInput.files[0];
+            if (!file) {
+                log('Please select a CSV file.', 'error');
+                return;
+            }
+
+            const serverAddress = 'http://127.0.0.1:8080';
+            log('Connecting to server...');
+
+            try {
+                // Fetch the initial/updated model weights from the server
+                const weightsResponse = await fetch(`${serverAddress}/get-weights`);
+                if (!weightsResponse.ok) throw new Error('Failed to get weights from server.');
+                const weightsData = await weightsResponse.json();
+                
+                // Load data from the CSV BEFORE creating the model
+                const { features, labels } = await loadCSV(file);
+                if (features.length === 0) {
+                    log('No features found in the CSV file.', 'error');
+                    return;
+                }
+
+                const xTrain = tf.tensor2d(features);
+                const yTrain = tf.tensor1d(labels);
+
+                // Create and compile the model
+                const model = tf.sequential();
+                
+                // *** THIS IS THE FIX ***
+                // Dynamically set the inputShape based on the number of features in the loaded data
+                model.add(tf.layers.dense({ 
+                    units: 128, 
+                    activation: 'relu', 
+                    inputShape: [features[0].length] // Use the actual feature count
+                }));
+
+                model.add(tf.layers.dense({ units: 10, activation: 'softmax' })); // Adjust output units if needed
+                model.compile({ optimizer: 'adam', loss: 'sparseCategoricalCrossentropy', metrics: ['accuracy'] });
+                
+                log('Model created. Loading weights from server...');
+                // Convert list of lists back to tensors
+                const initialWeights = weightsData.weights.map(w => tf.tensor(w));
+                
+                // Set the model's weights from the server
+                model.setWeights(initialWeights);
+
+                log('Starting local training...');
+                await model.fit(xTrain, yTrain, {
+                    epochs: 1,
+                    batchSize: 32,
+                    callbacks: {
+                        onEpochEnd: (epoch, logs) => log(`Epoch ${epoch + 1}: Loss = ${logs.loss.toFixed(4)}, Accuracy = ${(logs.acc * 100).toFixed(2)}%`)
+                    }
+                });
+
+                // Get the updated weights after local training
+                const updatedWeights = model.getWeights().map(w => w.arraySync());
+                
+                log('Sending updated weights to server...');
+                // Send weights to the server for aggregation
+                const sendResponse = await fetch(`${serverAddress}/send-weights`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ weights: updatedWeights, num_samples: features.length })
+                });
+
+                if (sendResponse.ok) {
+                    log('Training and weight submission successful!', 'success');
+                } else {
+                    log('Failed to send weights.', 'error');
+                }
+
+            } catch (error) {
+                log(`An error occurred: ${error.message}`, 'error');
+            }
+        };
+    </script>
+</body>
+</html>
