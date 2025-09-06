@@ -21,7 +21,8 @@
     <p>This application will train a model on your local data without sending the data to the server.</p>
 
     <input type="file" id="csvFile" accept=".csv" />
-    <button onclick="startTraining()">Start Training</button>
+    <!-- Added type="button" to prevent any default form submission behavior -->
+    <button type="button" onclick="startTraining()">Start Training</button>
 
     <h3>Training Log</h3>
     <div id="log"></div>
@@ -86,22 +87,18 @@
                 // Create and compile the model
                 const model = tf.sequential();
                 
-                // *** THIS IS THE FIX ***
-                // Dynamically set the inputShape based on the number of features in the loaded data
                 model.add(tf.layers.dense({ 
                     units: 128, 
                     activation: 'relu', 
-                    inputShape: [features[0].length] // Use the actual feature count
+                    inputShape: [features[0].length]
                 }));
 
-                model.add(tf.layers.dense({ units: 10, activation: 'softmax' })); // Adjust output units if needed
+                model.add(tf.layers.dense({ units: 10, activation: 'softmax' }));
                 model.compile({ optimizer: 'adam', loss: 'sparseCategoricalCrossentropy', metrics: ['accuracy'] });
                 
                 log('Model created. Loading weights from server...');
-                // Convert list of lists back to tensors
                 const initialWeights = weightsData.weights.map(w => tf.tensor(w));
                 
-                // Set the model's weights from the server
                 model.setWeights(initialWeights);
 
                 log('Starting local training...');
@@ -113,11 +110,9 @@
                     }
                 });
 
-                // Get the updated weights after local training
                 const updatedWeights = model.getWeights().map(w => w.arraySync());
                 
                 log('Sending updated weights to server...');
-                // Send weights to the server for aggregation
                 const sendResponse = await fetch(`${serverAddress}/send-weights`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -137,3 +132,4 @@
     </script>
 </body>
 </html>
+

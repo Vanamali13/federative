@@ -14,7 +14,7 @@ strategy = fl.server.strategy.FedAvg(
 print("Starting Federated Server...")
 
 # Create the initial global model
-model = create_model(input_shape=(2,)) # Example input shape, adjust based on your data
+model = create_model(input_shape=(13,)) # Example input shape, adjust based on your data
 
 # Save the initial model to a .h5 file for the API server
 model.save("global_model.h5")
