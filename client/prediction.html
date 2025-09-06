@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heart Disease Prediction</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; background-color: #f0f2f5; color: #333; }
+        h1 { color: #1a73e8; }
+        .section { background-color: #fff; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .error { color: #ea4335; }
+        input[type="text"] { width: calc(100% - 22px); border: 1px solid #ccc; padding: 10px; border-radius: 4px; margin-bottom: 10px; }
+        button { background-color: #1a73e8; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; transition: background-color 0.3s; }
+        button:hover { background-color: #1558b3; }
+        #predictionResult { font-size: 1.2em; font-weight: bold; margin-top: 10px; padding: 10px; border-radius: 4px; text-align: center; }
+        .prediction-positive { color: #ea4335; background-color: #fce8e6; }
+        .prediction-negative { color: #34a853; background-color: #e6f4ea; }
+    </style>
+</head>
+<body>
+    <div class="section">
+        <h1>Heart Disease Prediction</h1>
+        <p>Enter 13 comma-separated feature values from a patient's data to get a prediction.</p>
+        <input type="text" id="featureInput" placeholder="e.g., 63,1,3,145,233,1,0,150,0,2.3,0,0,1">
+        <button type="button" onclick="getPrediction()">Get Prediction</button>
+        <div id="predictionResult"></div>
+    </div>
+
+    <script>
+        const getPrediction = async () => {
+            const inputElement = document.getElementById('featureInput');
+            const resultElement = document.getElementById('predictionResult');
+            const featureString = inputElement.value;
+
+            if (!featureString) {
+                resultElement.textContent = 'Please enter feature values.';
+                resultElement.className = 'error';
+                return;
+            }
+
+            const features = featureString.split(',').map(Number);
+            
+            if (features.some(isNaN) || features.length !== 13) {
+                resultElement.textContent = 'Invalid input. Please provide 13 comma-separated numbers.';
+                resultElement.className = 'error';
+                return;
+            }
+            
+            resultElement.textContent = 'Getting prediction...';
+            resultElement.className = '';
+
+            try {
+                const serverAddress = 'http://127.0.0.1:8080';
+                const response = await fetch(`${serverAddress}/predict`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ features: features })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Server responded with status: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                resultElement.textContent = `Result: ${data.result_text}`;
+                if (data.predicted_class === 1) {
+                    resultElement.className = 'prediction-positive';
+                } else {
+                    resultElement.className = 'prediction-negative';
+                }
+
+            } catch (error) {
+                resultElement.textContent = `Error: ${error.message}`;
+                resultElement.className = 'error';
+            }
+        };
+    </script>
+</body>
+</html>
